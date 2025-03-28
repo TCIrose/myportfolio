@@ -1,0 +1,14 @@
+# Ignore deployment and Shiny files
+rsconnect/
+shinyapps.io/
+*.Rproj
+*.RData
+*.Rhistory
+.Rproj.user/
+
+# Ignore R Markdown output and logs
+*.Rmd~
+*.log
+*.out
+*.aux
+
