@@ -57,7 +57,7 @@ ui <- dashboardPage(
           actionLink("githubBtn", 
                      icon("github", class = "fa-2x"),
                      style = "color: #333; margin: 0 5px;",
-                     onclick = "window.open('https://github.com/yourusername', '_blank')"),
+                     onclick = "window.open('https://github.com/TCIrose', '_blank')"),
           actionLink("emailBtn", 
                      icon("envelope", class = "fa-2x"),
                      style = "color: #D44638; margin: 0 5px;",
@@ -656,33 +656,37 @@ ui <- dashboardPage(
                       multiple = FALSE,
                       accept = c(".csv", ".xls", ".xlsx", ".xpt", ".sas7bdat", ".dat", ".txt", ".rds")),
             
-            # Data format options
+            # Data loading button
             conditionalPanel(
               condition = "output.fileUploaded",
-              radioButtons("header", "Header",
-                           choices = c("Yes" = TRUE, "No" = FALSE),
-                           selected = TRUE, inline = TRUE),
-              
-              conditionalPanel(
-                condition = "input.fileUpload.type == 'text/csv' || input.fileUpload.type == 'text/plain'",
-                radioButtons("sep", "Separator",
-                             choices = c(Comma = ",", Semicolon = ";", Tab = "\t"),
-                             selected = ",", inline = TRUE),
-                radioButtons("quote", "Quote",
-                             choices = c(None = "", "Double Quote" = '"', "Single Quote" = "'"),
-                             selected = '"', inline = TRUE)
-              ),
-              
               actionButton("loadData", "Load Data", class = "btn-primary")
             ),
             
-            # Data summary and preview
+            # Data exploration section
             conditionalPanel(
               condition = "output.dataLoaded",
-              h3("Data Summary"),
-              verbatimTextOutput("dataSummary"),
-              h3("Data Preview (First 10 Rows)"),
-              DTOutput("dataPreview")
+              tabBox(
+                width = 12,
+                tabPanel(
+                  "Data Structure",
+                  h4("Dataset Dimensions:"),
+                  verbatimTextOutput("dataDims"),
+                  h4("Variable Types:"),
+                  DTOutput("varTypes")
+                ),
+                tabPanel(
+                  "Variable Explorer",
+                  selectInput("varSelect", "Select Variable:", choices = NULL),
+                  h4("Variable Summary:"),
+                  verbatimTextOutput("varSummary"),
+                  h4("Value Distribution:"),
+                  plotlyOutput("varPlot")
+                ),
+                tabPanel(
+                  "Data Preview",
+                  DTOutput("dataPreview")
+                )
+              )
             ),
             
             # Error messages

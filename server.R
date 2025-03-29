@@ -125,26 +125,21 @@ server <- function(input, output, session) {
       ext <- tools::file_ext(file$datapath)
       
       data <- switch(ext,
-                     csv = read.csv(file$datapath, 
-                                    header = as.logical(input$header),
-                                    sep = input$sep,
-                                    quote = input$quote),
+                     csv = read.csv(file$datapath),
                      xls = readxl::read_excel(file$datapath),
                      xlsx = readxl::read_excel(file$datapath),
                      xpt = haven::read_xpt(file$datapath),
                      sas7bdat = haven::read_sas(file$datapath),
-                     dat = read.table(file$datapath, 
-                                      header = as.logical(input$header)),
-                     txt = read.table(file$datapath, 
-                                      header = as.logical(input$header),
-                                      sep = input$sep,
-                                      quote = input$quote),
+                     dat = read.table(file$datapath),
+                     txt = read.table(file$datapath),
                      rds = readRDS(file$datapath),
-                     {
-                       # Default case for unsupported extensions
-                       stop("Unsupported file format")
-                     }
+                     stop("Unsupported file format")
       )
+      
+      # Convert to data.frame if it isn't already
+      if (!is.data.frame(data)) {
+        data <- as.data.frame(data)
+      }
       
       loadedData(data)
       output$loadError <- reactive(FALSE)
@@ -165,18 +160,91 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "dataLoaded", suspendWhenHidden = FALSE)
   
-  # Data summary output
-  output$dataSummary <- renderPrint({
+  # Update variable selection dropdown
+  observeEvent(loadedData(), {
     req(loadedData())
-    cat("Dataset dimensions:", dim(loadedData()), "\n\n")
-    cat("Variable names and types:\n")
-    str(loadedData())
+    updateSelectInput(session, "varSelect", 
+                      choices = names(loadedData()))
+  })
+  
+  # Data dimensions output
+  output$dataDims <- renderPrint({
+    req(loadedData())
+    dim(loadedData())
+  })
+  
+  # Variable types table
+  output$varTypes <- renderDT({
+    req(loadedData())
+    var_info <- data.frame(
+      Variable = names(loadedData()),
+      Type = sapply(loadedData(), function(x) class(x)[1]),
+      stringsAsFactors = FALSE
+    )
+    datatable(var_info, options = list(dom = 't'))
+  })
+  
+  # Variable summary output
+  output$varSummary <- renderPrint({
+    req(loadedData(), input$varSelect)
+    var <- loadedData()[[input$varSelect]]
+    
+    if (is.numeric(var)) {
+      cat("Numeric Variable Summary:\n")
+      cat("------------------------\n")
+      cat("Mean:", mean(var, na.rm = TRUE), "\n")
+      cat("Median:", median(var, na.rm = TRUE), "\n")
+      cat("Min:", min(var, na.rm = TRUE), "\n")
+      cat("Max:", max(var, na.rm = TRUE), "\n")
+      cat("SD:", sd(var, na.rm = TRUE), "\n")
+      cat("Variance:", var(var, na.rm = TRUE), "\n")
+      cat("NA values:", sum(is.na(var)), "\n")
+    } else if (is.factor(var) || is.character(var)) {
+      cat("Categorical Variable Summary:\n")
+      cat("---------------------------\n")
+      print(table(var))
+      cat("\nNA values:", sum(is.na(var)), "\n")
+    } else if (is.logical(var)) {
+      cat("Logical Variable Summary:\n")
+      cat("------------------------\n")
+      print(table(var))
+      cat("\nNA values:", sum(is.na(var)), "\n")
+    } else {
+      cat("Variable type:", class(var)[1], "\n")
+      print(summary(var))
+    }
+  })
+  
+  # Variable plot
+  output$varPlot <- renderPlotly({
+    req(loadedData(), input$varSelect)
+    var <- loadedData()[[input$varSelect]]
+    
+    if (is.numeric(var)) {
+      p <- plot_ly(x = ~var, type = "histogram", 
+                   nbinsx = 30) %>%
+        layout(xaxis = list(title = input$varSelect),
+               yaxis = list(title = "Count"))
+    } else if (is.factor(var) || is.character(var) || is.logical(var)) {
+      freq <- as.data.frame(table(var))
+      p <- plot_ly(freq, x = ~var, y = ~Freq, type = "bar") %>%
+        layout(xaxis = list(title = input$varSelect),
+               yaxis = list(title = "Count"))
+    } else {
+      p <- plot_ly(x = 1, y = 1, type = "scatter", mode = "text",
+                   text = paste("No plot available for", class(var)[1], "variables"),
+                   textposition = "middle center") %>%
+        layout(xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+    }
+    p
   })
   
   # Data preview output
   output$dataPreview <- renderDT({
     req(loadedData())
-    datatable(head(loadedData(), 10), 
-              options = list(scrollX = TRUE, dom = 't'))
+    datatable(loadedData(), 
+              options = list(scrollX = TRUE, 
+                             pageLength = 10))
   })
 }
