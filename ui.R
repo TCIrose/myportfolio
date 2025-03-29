@@ -677,10 +677,73 @@ ui <- dashboardPage(
                 tabPanel(
                   "Variable Explorer",
                   selectInput("varSelect", "Select Variable:", choices = NULL),
+                  radioButtons("treatAs", "Treat variable as:",
+                               choices = c("Automatic" = "auto",
+                                           "Numeric" = "numeric",
+                                           "Categorical" = "categorical"),
+                               inline = TRUE),
                   h4("Variable Summary:"),
                   verbatimTextOutput("varSummary"),
                   h4("Value Distribution:"),
-                  plotlyOutput("varPlot")
+                  plotlyOutput("varPlot"),
+                  
+                  # Cleaning options for this specific variable
+                  h4("Data Cleaning Options for this Variable"),
+                  checkboxInput("removeNAVar", "Remove NA values for this variable", FALSE),
+                  conditionalPanel(
+                    condition = "input.treatAs == 'numeric' || (input.treatAs == 'auto' && output.isVarNumeric)",
+                    checkboxInput("removeOutliersVar", "Remove outliers for this variable", FALSE),
+                    conditionalPanel(
+                      condition = "input.removeOutliersVar",
+                      sliderInput("outlierThresholdVar", "Outlier threshold (IQR multiplier):",
+                                  min = 1, max = 5, value = 1.5, step = 0.1)
+                    )
+                  ),
+                  actionButton("cleanVar", "Apply Cleaning to This Variable", 
+                               class = "btn-warning")
+                ),
+                tabPanel(
+                  "Advanced Visualization",
+                  fluidRow(
+                    column(4,
+                           selectInput("visX", "X-axis Variable:", choices = NULL),
+                           selectInput("visY", "Y-axis Variable (for scatter/box):", 
+                                       choices = c("None" = "none")),
+                           selectInput("plotType", "Plot Type:",
+                                       choices = c("Histogram" = "hist",
+                                                   "Box Plot" = "box",
+                                                   "Bar Chart" = "bar",
+                                                   "Scatter Plot" = "scatter",
+                                                   "Violin Plot" = "violin",
+                                                   "Line Chart" = "line"))
+                    ),
+                    column(4,
+                           selectInput("group1", "Group By (Primary):", 
+                                       choices = c("None" = "none")),
+                           selectInput("group2", "Group By (Secondary - optional):", 
+                                       choices = c("None" = "none")),
+                           radioButtons("summaryFunc", "Summary Function:",
+                                        choices = c("Mean" = "mean",
+                                                    "Median" = "median",
+                                                    "Sum" = "sum",
+                                                    "Count" = "count"),
+                                        selected = "mean",
+                                        inline = TRUE)
+                    ),
+                    column(4,
+                           checkboxInput("showPoints", "Show individual points", FALSE),
+                           conditionalPanel(
+                             condition = "input.plotType == 'scatter' || input.plotType == 'violin'",
+                             checkboxInput("addTrend", "Add trend line", FALSE)
+                           ),
+                           br(),
+                           actionButton("generatePlot", "Generate Plot", 
+                                        class = "btn-primary")
+                    )
+                  ),
+                  plotlyOutput("advancedPlot"),
+                  h4("Plot Data Summary"),
+                  verbatimTextOutput("plotSummary")
                 ),
                 tabPanel(
                   "Data Preview",
