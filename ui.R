@@ -811,7 +811,7 @@ ui <- dashboardPage(
             # Outlier Detection & Removal
             h4("Outlier Detection & Removal"),
             fluidRow(
-              column(6, selectInput("outlierVar", "Select Variable(s):", choices = NULL, multiple = TRUE)),
+              column(6, selectInput("outlierVar", "Select Variable(s):", choices = NULL, multiple = FALSE)),
               column(6, radioButtons("outlierMethod", "Outlier Removal Method:",
                                      choices = c("IQR" = "iqr", "Z-Score" = "zscore"),
                                      inline = TRUE)),
