@@ -770,6 +770,19 @@ ui <- dashboardPage(
             title = "Data Cleaning", width = 12,
             h4("Clean and preprocess your data"),
             
+            # Data Source Selection
+            radioButtons("dataSource", "Select Data Source:",
+                         choices = c("Use Data from Data Explorer" = "explorer",
+                                     "Upload New Data" = "upload"),
+                         inline = TRUE),
+            
+            conditionalPanel(
+              condition = "input.dataSource == 'upload'",
+              fileInput("cleanFileUpload", "Upload Data File:",
+                        accept = c(".csv", ".xls", ".xlsx", ".xpt", ".sas7bdat", ".dat", ".txt", ".rds")),
+              actionButton("cleanLoadData", "Load Data")
+            ),
+            
             # Convert Data Types
             h4("Convert Data Types"),
             fluidRow(
