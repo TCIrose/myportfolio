@@ -843,11 +843,11 @@ ui <- dashboardPage(
             fluidRow(
               column(6, selectInput("filterVar", "Select Variable:", choices = NULL)),
               conditionalPanel(
-                condition = "output.isFilterVarNumeric", # Conditional panel based on server logic
+                condition = "output.isFilterVarNumeric", # Corrected condition
                 column(6, textInput("numericFilter", "Numeric Filter (e.g., '> 10')"))
               ),
               conditionalPanel(
-                condition = "output.isFilterVarCategorical", # Conditional panel based on server logic
+                condition = "output.isFilterVarCategorical", # Corrected condition
                 column(6, checkboxGroupInput("categoricalFilters", "Select Categories:", choices = NULL))
               ),
               column(12, actionButton("applyFilter", "Apply Filter"))
