@@ -869,6 +869,13 @@ ui <- dashboardPage(
                 column(12, selectInput("fuzzyMatchChoice", "Choose Match for Selected Value", choices = NULL, multiple = TRUE)) # User selects their preferred matches
               ),
               column(12, actionButton("applyCategoricalClean", "Apply Cleaning"))
+            ),
+            hr(),
+            
+            # Download data Button Section
+            h4("Download Data"),
+            fluidRow(
+              column(12, downloadButton("downloadData", "Download Filtered Data"))
             )
           )
         )
