@@ -776,6 +776,16 @@ ui <- dashboardPage(
                       accept = c(".csv", ".xls", ".xlsx", ".xpt", ".sas7bdat", ".dat", ".txt", ".rds")),
             actionButton("cleanLoadData", "Load Data"),
             
+            
+            # Subsetting Data
+            h4("Subsetting Data"),
+            fluidRow(
+              column(12, pickerInput("subsetVars", "Select Columns to Keep:", choices = NULL, multiple = TRUE, options = list(`actions-box` = TRUE))),
+              column(12, actionButton("applySubset", "Apply Subset")) # Add the apply button
+              
+            ),
+            hr(),
+            
             # Convert Data Types
             h4("Convert Data Types"),
             fluidRow(
@@ -825,13 +835,6 @@ ui <- dashboardPage(
               ),
               column(12, plotOutput("outlierPlot")), # Visualization
               column(12, actionButton("applyOutlier", "Apply Outlier Removal"))
-            ),
-            hr(),
-            
-            # Subsetting Data
-            h4("Subsetting Data"),
-            fluidRow(
-              column(12, pickerInput("subsetVars", "Select Columns to Keep:", choices = NULL, multiple = TRUE, options = list(`actions-box` = TRUE)))
             ),
             hr(),
             
