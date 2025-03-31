@@ -875,7 +875,7 @@ ui <- dashboardPage(
             # Download data Button Section
             h4("Download Data"),
             fluidRow(
-              column(12, downloadButton("downloadData", "Download Filtered Data"))
+              column(12, downloadButton("downloadData", "Download Cleaned Data"))
             )
           )
         )
