@@ -6,13 +6,10 @@ library(shinydashboard)
 library(bslib)
 library(stringdist)
 
-# Increase maximum upload size to 10 MB
-options(shiny.maxRequestSize = 10*1024^2) # 10 MB
-
 server <- function(input, output, session) {
   # Hide loading screen when app loads
   waiter_hide()
-  
+    
   # Notification menu
   output$notificationMenu <- renderMenu({
     dropdownMenu(
@@ -111,13 +108,13 @@ server <- function(input, output, session) {
   
   # Interactive projects handlers
   loadedData <- reactiveVal(NULL)
-  cleanedData <- reactiveVal(NULL)
+  cleanData <- reactiveVal(NULL)
   
   # Observe file upload
   observeEvent(input$fileUpload, {
     req(input$fileUpload)
     loadedData(NULL)
-    cleanedData(NULL)
+    cleanData(NULL)
   })
   
   # Check if file is uploaded
@@ -546,7 +543,7 @@ server <- function(input, output, session) {
   
   # Reactive value for data used in Data Cleaning
   cleanData <- reactiveVal(NULL)
-  # 
+  
   # Load data when cleanLoadData button is clicked
   observeEvent(input$cleanLoadData, {
     req(input$cleanFileUpload)
@@ -581,7 +578,7 @@ server <- function(input, output, session) {
       updateSelectInput(session, "convertVar", choices = names(data))
       updateSelectInput(session, "missingVar", choices = names(data)[sapply(data, is.numeric)])
       updateSelectInput(session, "outlierVar", choices = names(data))
-      updatePickerInput(session, "subsetVars", choices = names(data))
+      updateSelectInput(session, "subsetVars", choices = names(data))
       updateSelectInput(session, "filterVar", choices = names(data))
       updateSelectInput(session, "categoricalCleanVar", choices = names(data)[sapply(data, is.character)])
       
@@ -596,38 +593,6 @@ server <- function(input, output, session) {
     
     outputOptions(output, "cleanLoadError", suspendWhenHidden = FALSE)
   })  
-  
-  # Subsetting Data
-  # Reactive value to store selected variables
-  selectedVars <- reactiveVal(NULL)
-  
-  # Update selectedVars when pickerInput changes
-  observeEvent(input$subsetVars, {
-    selectedVars(input$subsetVars)
-  })
-  
-  # Subsetting Data when the apply button is clicked
-  observeEvent(input$applySubset, {
-    req(cleanData(), selectedVars())
-    tryCatch({
-      data <- cleanData()
-      data <- data[, selectedVars(), drop = FALSE]
-      data <- as.data.frame(data) # Ensure it's always a data.frame
-      
-      # Update sections with the selected columns/variables
-      updateSelectInput(session, "convertVar", choices = names(data))
-      updateSelectInput(session, "missingVar", choices = names(data)[sapply(data, is.numeric)])
-      updateSelectInput(session, "outlierVar", choices = names(data))
-      updatePickerInput(session, "subsetVars", choices = names(data))
-      updateSelectInput(session, "filterVar", choices = names(data))
-      updateSelectInput(session, "categoricalCleanVar", choices = names(data)[sapply(data, is.character)])
-      
-      cleanData(data)
-    }, error = function(e){
-      print(paste("subsetting error:", e$message))
-      showNotification(paste("subsetting error:", e$message), type = 'error')
-    })
-  })
   
   # Convert Data Types
   observeEvent(input$applyConvert, {
@@ -741,6 +706,14 @@ server <- function(input, output, session) {
     }
   })
   
+  # Subsetting Data
+  observeEvent(input$subsetVars, {
+    req(cleanData(), input$subsetVars)
+    
+    data <- cleanData()
+    data <- data[, input$subsetVars, drop = FALSE] # drop=FALSE to keep it as a data frame if only one column is selected
+    cleanData(data)
+  })
   
   # Filtering Data
   observeEvent(input$applyFilter, {
@@ -773,10 +746,6 @@ server <- function(input, output, session) {
                          }
           )
           cleanData(data)
-          # Update categorical filters after numeric filter.
-          if (is.character(cleanData()[[input$filterVar]]) || is.factor(cleanData()[[input$filterVar]])) {
-            updateCheckboxGroupInput(session, "categoricalFilters", choices = sort(unique(cleanData()[[input$filterVar]])))
-          }
         } else {
           showNotification("Invalid numeric filter format. Use e.g., '> 10' or '<= 5'.", type = "error")
         }
@@ -787,33 +756,9 @@ server <- function(input, output, session) {
       selected_categories <- input$categoricalFilters
       data <- data[var %in% selected_categories, , drop = FALSE]
       cleanData(data)
-      #Update categorical filters after categorical filter.
-      updateCheckboxGroupInput(session, "categoricalFilters", choices = sort(unique(cleanData()[[input$filterVar]])))
-      
     }
   })
   
-  # Reactive outputs to control conditional panels
-  output$isFilterVarNumeric <- reactive({
-    req(cleanData(), input$filterVar)
-    is.numeric(cleanData()[[input$filterVar]])
-  })
-  
-  output$isFilterVarCategorical <- reactive({
-    req(cleanData(), input$filterVar)
-    is.character(cleanData()[[input$filterVar]]) || is.factor(cleanData()[[input$filterVar]])
-  })
-  
-  # Update categorical filters when filterVar changes
-  observeEvent(input$filterVar, {
-    req(cleanData(), input$filterVar)
-    if (is.character(cleanData()[[input$filterVar]]) || is.factor(cleanData()[[input$filterVar]])) {
-      updateCheckboxGroupInput(session, "categoricalFilters", choices = sort(unique(cleanData()[[input$filterVar]])))
-    }
-  })
-  
-  outputOptions(output, "isFilterVarNumeric", suspendWhenHidden = FALSE)
-  outputOptions(output, "isFilterVarCategorical", suspendWhenHidden = FALSE)
   
   # Categorical Data Cleaning
   observeEvent(input$applyCategoricalClean, {
@@ -880,15 +825,4 @@ server <- function(input, output, session) {
       cat("No potential fuzzy matches found\n")
     }
   })
-  
-  # Download Handler
-  output$downloadData <- downloadHandler(
-    filename = function() {
-      paste("cleaned_data-", Sys.Date(), ".csv", sep = "")
-    },
-    content = function(file) {
-      write.csv(cleanData(), file)
-    }
-  )
-  
 }

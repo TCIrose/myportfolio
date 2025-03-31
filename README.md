@@ -20,11 +20,9 @@ Blog: A section with personal blog posts related to data science and technology.
 📂 Project Structure
 
 myportfolio/
-
-UI.R                  # User interface script
-Server.R              # Server script
-app.R                 # Main entry point for running the app
-www/                  # Static assets (CSS, images, etc.)
-README.md             # This README file
+├── UI and Server         # contained in the app.R
+├── app.R                 # Main entry point for running the app
+├── www/                  # Static assets (CSS, images, etc.)
+└── README.md             # This README file
 
 

@@ -36,7 +36,8 @@ ui <- dashboardPage(
                menuSubItem("Airline Reviews", tabName = "airline_reviews")
       ),
       menuItem("Interactive Projects", icon = icon("laptop-code"),
-               menuSubItem("Data Explorer", tabName = "data_explorer")
+               menuSubItem("Data Explorer", tabName = "data_explorer"),
+               menuSubItem("Data Cleaning", tabName = "data_cleaning") # the data cleaner
       ),
       
       menuItem("Blog", tabName = "blog", icon = icon("blog"),
@@ -677,10 +678,73 @@ ui <- dashboardPage(
                 tabPanel(
                   "Variable Explorer",
                   selectInput("varSelect", "Select Variable:", choices = NULL),
+                  radioButtons("treatAs", "Treat variable as:",
+                               choices = c("Automatic" = "auto",
+                                           "Numeric" = "numeric",
+                                           "Categorical" = "categorical"),
+                               inline = TRUE),
                   h4("Variable Summary:"),
                   verbatimTextOutput("varSummary"),
                   h4("Value Distribution:"),
-                  plotlyOutput("varPlot")
+                  plotlyOutput("varPlot"),
+                  
+                  # Cleaning options for this specific variable
+                  h4("Data Cleaning Options for this Variable"),
+                  checkboxInput("removeNAVar", "Remove NA values for this variable", FALSE),
+                  conditionalPanel(
+                    condition = "input.treatAs == 'numeric' || (input.treatAs == 'auto' && output.isVarNumeric)",
+                    checkboxInput("removeOutliersVar", "Remove outliers for this variable", FALSE),
+                    conditionalPanel(
+                      condition = "input.removeOutliersVar",
+                      sliderInput("outlierThresholdVar", "Outlier threshold (IQR multiplier):",
+                                  min = 1, max = 5, value = 1.5, step = 0.1)
+                    )
+                  ),
+                  actionButton("cleanVar", "Apply Cleaning to This Variable", 
+                               class = "btn-warning")
+                ),
+                tabPanel(
+                  "Advanced Visualization",
+                  fluidRow(
+                    column(4,
+                           selectInput("visX", "X-axis Variable:", choices = NULL),
+                           selectInput("visY", "Y-axis Variable (for scatter/box):", 
+                                       choices = c("None" = "none")),
+                           selectInput("plotType", "Plot Type:",
+                                       choices = c("Histogram" = "hist",
+                                                   "Box Plot" = "box",
+                                                   "Bar Chart" = "bar",
+                                                   "Scatter Plot" = "scatter",
+                                                   "Violin Plot" = "violin",
+                                                   "Line Chart" = "line"))
+                    ),
+                    column(4,
+                           selectInput("group1", "Group By (Primary):", 
+                                       choices = c("None" = "none")),
+                           selectInput("group2", "Group By (Secondary - optional):", 
+                                       choices = c("None" = "none")),
+                           radioButtons("summaryFunc", "Summary Function:",
+                                        choices = c("Mean" = "mean",
+                                                    "Median" = "median",
+                                                    "Sum" = "sum",
+                                                    "Count" = "count"),
+                                        selected = "mean",
+                                        inline = TRUE)
+                    ),
+                    column(4,
+                           checkboxInput("showPoints", "Show individual points", FALSE),
+                           conditionalPanel(
+                             condition = "input.plotType == 'scatter' || input.plotType == 'violin'",
+                             checkboxInput("addTrend", "Add trend line", FALSE)
+                           ),
+                           br(),
+                           actionButton("generatePlot", "Generate Plot", 
+                                        class = "btn-primary")
+                    )
+                  ),
+                  plotlyOutput("advancedPlot"),
+                  h4("Plot Data Summary"),
+                  verbatimTextOutput("plotSummary")
                 ),
                 tabPanel(
                   "Data Preview",
@@ -694,6 +758,124 @@ ui <- dashboardPage(
               condition = "output.loadError",
               div(class = "alert alert-danger",
                   textOutput("errorMessage"))
+            )
+          )
+        )
+      ),
+      # Data Cleaning Tab
+      tabItem(
+        tabName = "data_cleaning",
+        fluidRow(
+          box(
+            title = "Data Cleaning", width = 12,
+            h4("Clean and preprocess your data"),
+            
+            # File upload section
+            fileInput("cleanFileUpload", "Choose Data File",
+                      multiple = FALSE,
+                      accept = c(".csv", ".xls", ".xlsx", ".xpt", ".sas7bdat", ".dat", ".txt", ".rds")),
+            actionButton("cleanLoadData", "Load Data"),
+            
+            
+            # Subsetting Data
+            h4("Subsetting Data"),
+            fluidRow(
+              column(12, pickerInput("subsetVars", "Select Columns to Keep:", choices = NULL, multiple = TRUE, options = list(`actions-box` = TRUE))),
+              column(12, actionButton("applySubset", "Apply Subset")) # Add the apply button
+              
+            ),
+            hr(),
+            
+            # Convert Data Types
+            h4("Convert Data Types"),
+            fluidRow(
+              column(6, selectInput("convertVar", "Select Variable:", choices = NULL)),
+              column(6, radioButtons("convertTo", "Convert to:",
+                                     choices = c("Categorical" = "categorical", "Continuous" = "continuous"),
+                                     inline = TRUE)),
+              column(12, actionButton("applyConvert", "Apply Conversion"))
+            ),
+            hr(),
+            
+            # Handle Duplicates
+            h4("Handle Duplicates"),
+            fluidRow(
+              column(12, actionButton("removeDuplicates", "Remove Duplicate Rows"))
+            ),
+            hr(),
+            
+            # Handle Missing Values
+            h4("Handle Missing Values"),
+            fluidRow(
+              column(6, selectInput("missingVar", "Select Continuous Variable:", choices = NULL)),
+              column(6, radioButtons("missingAction", "Action:",
+                                     choices = c("Remove Rows" = "remove",
+                                                 "Replace with Mean" = "mean",
+                                                 "Replace with Median" = "median",
+                                                 "Replace with Mode" = "mode"),
+                                     inline = TRUE)),
+              column(12, actionButton("applyMissing", "Apply Action"))
+            ),
+            hr(),
+            
+            # Outlier Detection & Removal
+            h4("Outlier Detection & Removal"),
+            fluidRow(
+              column(6, selectInput("outlierVar", "Select Variable(s):", choices = NULL, multiple = FALSE)),
+              column(6, radioButtons("outlierMethod", "Outlier Removal Method:",
+                                     choices = c("IQR" = "iqr", "Z-Score" = "zscore"),
+                                     inline = TRUE)),
+              conditionalPanel(
+                condition = "input.outlierMethod == 'iqr'",
+                column(6, sliderInput("iqrDegree", "IQR Multiplier:", min = 1, max = 5, value = 1.5, step = 0.1))
+              ),
+              conditionalPanel(
+                condition = "input.outlierMethod == 'zscore'",
+                column(6, numericInput("zscoreThreshold", "Z-Score Threshold:", value = 3, min = 1))
+              ),
+              column(12, plotOutput("outlierPlot")), # Visualization
+              column(12, actionButton("applyOutlier", "Apply Outlier Removal"))
+            ),
+            hr(),
+            
+            # Filtering Data
+            h4("Filtering Data"),
+            fluidRow(
+              column(6, selectInput("filterVar", "Select Variable:", choices = NULL)),
+              conditionalPanel(
+                condition = "output.isFilterVarNumeric", # Corrected condition
+                column(6, textInput("numericFilter", "Numeric Filter (e.g., '> 10')"))
+              ),
+              conditionalPanel(
+                condition = "output.isFilterVarCategorical", # Corrected condition
+                column(6, checkboxGroupInput("categoricalFilters", "Select Categories:", choices = NULL))
+              ),
+              column(12, actionButton("applyFilter", "Apply Filter"))
+            ),
+            hr(),
+            
+            # Categorical Data Cleaning
+            h4("Categorical Data Cleaning"),
+            fluidRow(
+              column(6, selectInput("categoricalCleanVar", "Select Textual Variable:", choices = NULL)),
+              column(6, checkboxGroupInput("categoricalCleanOptions", "Cleaning Options:",
+                                           choices = c("Convert to Lowercase" = "lower",
+                                                       "Trim Whitespace" = "trim",
+                                                       "Apply Fuzzy Matching" = "fuzzy"))
+              ),
+              conditionalPanel(
+                condition = "input.categoricalCleanOptions.includes('fuzzy')",
+                column(12, verbatimTextOutput("fuzzyMatches")), # Display potential matches
+                column(12, selectInput("fuzzyMatchChoice", "Choose Match for Selected Value", choices = NULL, multiple = TRUE)) # User selects their preferred matches
+              ),
+              column(12, actionButton("applyCategoricalClean", "Apply Cleaning"))
+            ),
+            hr(),
+            
+            # Download data Button Section
+            h4("Download Data"),
+            fluidRow(
+              column(12, downloadButton("downloadData", "Download Cleaned Data"))
             )
           )
         )
@@ -808,4 +990,3 @@ ui <- dashboardPage(
     )
       )
       )
-
