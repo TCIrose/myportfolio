@@ -4,11 +4,15 @@ library(plotly)
 library(DT)
 library(shinydashboard)
 library(bslib)
+library(stringdist)
+
+# Increase maximum upload size to 10 MB
+options(shiny.maxRequestSize = 10*1024^2) # 10 MB
 
 server <- function(input, output, session) {
   # Hide loading screen when app loads
   waiter_hide()
-  
+    
   # Notification menu
   output$notificationMenu <- renderMenu({
     dropdownMenu(
@@ -537,4 +541,354 @@ server <- function(input, output, session) {
               options = list(scrollX = TRUE, 
                              pageLength = 10))
   })
+  
+   # Data Cleaning Functions
+   
+   # Reactive value for data used in Data Cleaning
+   cleanData <- reactiveVal(NULL)
+  # 
+   # Load data when cleanLoadData button is clicked
+   observeEvent(input$cleanLoadData, {
+     req(input$cleanFileUpload)
+     
+     tryCatch({
+       file <- input$cleanFileUpload
+       ext <- tools::file_ext(file$datapath)
+       
+       data <- switch(ext,
+                      csv = read.csv(file$datapath),
+                      xls = readxl::read_excel(file$datapath),
+                      xlsx = readxl::read_excel(file$datapath),
+                      xpt = haven::read_xpt(file$datapath),
+                      sas7bdat = haven::read_sas(file$datapath),
+                      dat = read.table(file$datapath),
+                      txt = read.table(file$datapath),
+                      rds = readRDS(file$datapath),
+                      stop("Unsupported file format")
+       )
+       
+       if (!is.data.frame(data)) {
+         data <- as.data.frame(data)
+       }
+       
+       if (is.null(data) || nrow(data) == 0) {
+         stop("Data loaded but appears empty")
+       }
+       
+       cleanData(data) # Update cleanData with uploaded data
+       
+       # Update variable selections with actual columns
+       updateSelectInput(session, "convertVar", choices = names(data))
+       updateSelectInput(session, "missingVar", choices = names(data)[sapply(data, is.numeric)])
+       updateSelectInput(session, "outlierVar", choices = names(data))
+       updatePickerInput(session, "subsetVars", choices = names(data))
+       updateSelectInput(session, "filterVar", choices = names(data))
+       updateSelectInput(session, "categoricalCleanVar", choices = names(data)[sapply(data, is.character)])
+       
+       output$cleanLoadError <- reactive(FALSE)
+     }, error = function(e) {
+       output$cleanLoadError <- reactive(TRUE)
+       output$cleanErrorMessage <- renderText({
+         paste("Error loading file:", e$message,
+               "\nPlease try a different file format.")
+       })
+     })
+     
+     outputOptions(output, "cleanLoadError", suspendWhenHidden = FALSE)
+   })  
+   
+   # Subsetting Data
+   # Reactive value to store selected variables
+   selectedVars <- reactiveVal(NULL)
+   
+   # Update selectedVars when pickerInput changes
+   observeEvent(input$subsetVars, {
+     selectedVars(input$subsetVars)
+   })
+   
+   # Subsetting Data when the apply button is clicked
+   observeEvent(input$applySubset, {
+     req(cleanData(), selectedVars())
+     tryCatch({
+       data <- cleanData()
+       data <- data[, selectedVars(), drop = FALSE]
+       data <- as.data.frame(data) # Ensure it's always a data.frame
+       
+       # Update sections with the selected columns/variables
+       updateSelectInput(session, "convertVar", choices = names(data))
+       updateSelectInput(session, "missingVar", choices = names(data)[sapply(data, is.numeric)])
+       updateSelectInput(session, "outlierVar", choices = names(data))
+       updatePickerInput(session, "subsetVars", choices = names(data))
+       updateSelectInput(session, "filterVar", choices = names(data))
+       updateSelectInput(session, "categoricalCleanVar", choices = names(data)[sapply(data, is.character)])
+       
+       cleanData(data)
+     }, error = function(e){
+       print(paste("subsetting error:", e$message))
+       showNotification(paste("subsetting error:", e$message), type = 'error')
+     })
+   })
+   
+   # Convert Data Types
+   observeEvent(input$applyConvert, {
+     req(cleanData(), input$convertVar, input$convertTo)
+     
+     data <- cleanData()
+     var_name <- input$convertVar
+     var <- data[[var_name]]
+     
+     if (input$convertTo == "categorical") {
+       data[[var_name]] <- as.factor(var)
+     } else if (input$convertTo == "continuous") {
+       data[[var_name]] <- as.numeric(var)
+     }
+     
+     cleanData(data)
+   })
+   
+   # Handle Duplicates
+   observeEvent(input$removeDuplicates, {
+     req(cleanData())
+     
+     data <- cleanData()
+     data <- distinct(data)
+     cleanData(data)
+   })
+   
+   # Handle Missing Values
+   observeEvent(input$applyMissing, {
+     req(cleanData(), input$missingVar, input$missingAction)
+     
+     data <- cleanData()
+     var_name <- input$missingVar
+    var <- data[[var_name]]
+
+    if (input$missingAction == "remove") {
+      data <- data[!is.na(var), ]
+    } else if (input$missingAction == "mean") {
+      data[[var_name]][is.na(var)] <- mean(var, na.rm = TRUE)
+    } else if (input$missingAction == "median") {
+      data[[var_name]][is.na(var)] <- median(var, na.rm = TRUE)
+    } else if (input$missingAction == "mode") {
+      mode_val <- names(sort(table(var), decreasing = TRUE))[1]
+      data[[var_name]][is.na(var)] <- as.numeric(mode_val) # Assuming numeric mode
+    }
+
+     cleanData(data)
+   })
+   
+   # Outlier Detection & Removal
+   observeEvent(input$applyOutlier, {
+     req(cleanData(), input$outlierVar, input$outlierMethod)
+     
+     data <- cleanData()
+     
+     for (var_name in input$outlierVar) {
+       var <- data[[var_name]]
+       
+       if (input$outlierMethod == "iqr") {
+         qnt <- quantile(var, probs = c(0.25, 0.75), na.rm = TRUE)
+         iqr <- IQR(var, na.rm = TRUE)
+         lower <- qnt[1] - (input$iqrDegree * iqr)
+         upper <- qnt[2] + (input$iqrDegree * iqr)
+         data <- data[var >= lower & var <= upper, ]
+       } else if (input$outlierMethod == "zscore") {
+         z_scores <- abs(scale(var))
+         data <- data[z_scores <= input$zscoreThreshold, ]
+       }
+     }
+     
+     cleanData(data)
+   })
+   
+   # Outlier Plot
+   output$outlierPlot <- renderPlot({
+     req(cleanData(), input$outlierVar)
+     
+     plots <- lapply(input$outlierVar, function(var_name) {
+       var <- cleanData()[[var_name]]
+       
+       # Before outlier removal
+       p1 <- boxplot(var, main = paste("Before Outlier Removal:", var_name), plot = FALSE)
+       
+       # After outlier removal (Using IQR)
+       if(input$outlierMethod == "iqr") {
+         qnt <- quantile(var, probs = c(0.25, 0.75), na.rm = TRUE)
+         iqr <- IQR(var, na.rm = TRUE)
+         lower <- qnt[1] - (input$iqrDegree * iqr)
+         upper <- qnt[2] + (input$iqrDegree * iqr)
+         
+         var_clean <- var[var >= lower & var <= upper]
+         p2 <- boxplot(var_clean, main = paste("After Outlier Removal (IQR):", var_name), plot = FALSE)
+       } else { #Zscore
+         z_scores <- abs(scale(var))
+         var_clean <- var[z_scores <= input$zscoreThreshold]
+         p2 <- boxplot(var_clean, main = paste("After Outlier Removal (Z-score):", var_name), plot = FALSE)
+       }
+       
+       
+       
+       par(mfrow = c(1, 2)) # Display plots side by side
+       boxplot(var, main = paste("Before Outlier Removal:", var_name))
+       boxplot(var_clean, main = paste("After Outlier Removal:", var_name))
+       par(mfrow = c(1, 1)) # Reset to single plot layout
+     })
+     
+     # Return a dummy plot if there are no variables selected
+     if (length(plots) == 0) {
+       plot(1, type = "n", axes = FALSE, xlab = "", ylab = "")
+       text(1, 1, "Select variable(s) to view outlier plots.")
+     }
+   })
+   
+   
+   # Filtering Data
+   observeEvent(input$applyFilter, {
+     req(cleanData(), input$filterVar)
+     
+     data <- cleanData()
+     var_name <- input$filterVar
+     var <- data[[var_name]]
+     
+     if (is.numeric(var)) {
+       filter_expr <- input$numericFilter
+       tryCatch({
+         # Parse the filter expression
+         parts <- strsplit(filter_expr, " ")[[1]]
+         if (length(parts) == 2) {
+           operator <- parts[1]
+           value <- as.numeric(parts[2])
+           
+           # Apply dplyr filter based on operator
+           data <- switch(operator,
+                          ">=" = filter(data, !!sym(var_name) >= value),
+                          ">" = filter(data, !!sym(var_name) > value),
+                          "<=" = filter(data, !!sym(var_name) <= value),
+                          "<" = filter(data, !!sym(var_name) < value),
+                          "==" = filter(data, !!sym(var_name) == value),
+                          "!=" = filter(data, !!sym(var_name) != value),
+                          {
+                            showNotification("Invalid numeric filter operator.", type = "error")
+                            return()
+                          }
+           )
+           cleanData(data)
+           # Update categorical filters after numeric filter.
+           if (is.character(cleanData()[[input$filterVar]]) || is.factor(cleanData()[[input$filterVar]])) {
+             updateCheckboxGroupInput(session, "categoricalFilters", choices = sort(unique(cleanData()[[input$filterVar]])))
+           }
+         } else {
+           showNotification("Invalid numeric filter format. Use e.g., '> 10' or '<= 5'.", type = "error")
+         }
+       }, error = function(e) {
+         showNotification(paste("Error in numeric filter:", e$message), type = "error")
+       })
+     } else if (is.character(var) || is.factor(var)) {
+       selected_categories <- input$categoricalFilters
+       data <- data[var %in% selected_categories, , drop = FALSE]
+       cleanData(data)
+       #Update categorical filters after categorical filter.
+       updateCheckboxGroupInput(session, "categoricalFilters", choices = sort(unique(cleanData()[[input$filterVar]])))
+       
+     }
+   })
+   
+   # Reactive outputs to control conditional panels
+   output$isFilterVarNumeric <- reactive({
+     req(cleanData(), input$filterVar)
+     is.numeric(cleanData()[[input$filterVar]])
+   })
+   
+   output$isFilterVarCategorical <- reactive({
+     req(cleanData(), input$filterVar)
+     is.character(cleanData()[[input$filterVar]]) || is.factor(cleanData()[[input$filterVar]])
+   })
+   
+   # Update categorical filters when filterVar changes
+   observeEvent(input$filterVar, {
+     req(cleanData(), input$filterVar)
+     if (is.character(cleanData()[[input$filterVar]]) || is.factor(cleanData()[[input$filterVar]])) {
+       updateCheckboxGroupInput(session, "categoricalFilters", choices = sort(unique(cleanData()[[input$filterVar]])))
+     }
+   })
+   
+   outputOptions(output, "isFilterVarNumeric", suspendWhenHidden = FALSE)
+   outputOptions(output, "isFilterVarCategorical", suspendWhenHidden = FALSE)
+
+  # Categorical Data Cleaning
+  observeEvent(input$applyCategoricalClean, {
+    req(cleanData(), input$categoricalCleanVar, input$categoricalCleanOptions)
+
+    data <- cleanData()
+    var_name <- input$categoricalCleanVar
+    var <- data[[var_name]]
+
+    if ("lower" %in% input$categoricalCleanOptions) {
+      var <- tolower(var)
+    }
+    if ("trim" %in% input$categoricalCleanOptions) {
+      var <- trimws(var)
+    }
+    if ("fuzzy" %in% input$categoricalCleanOptions) {
+      # Apply user-selected fuzzy matches
+      fuzzy_matches <- input$fuzzyMatchChoice
+      if (!is.null(fuzzy_matches)) {
+        for (match in fuzzy_matches){
+          original_value = unlist(strsplit(match, " -> "))[1]
+          new_value = unlist(strsplit(match, " -> "))[2]
+          var[var == original_value] = new_value
+        }
+      }
+    }
+
+    data[[var_name]] <- var
+    cleanData(data)
+  })
+
+  # Fuzzy Matching Output
+  output$fuzzyMatches <- renderPrint({
+    req(cleanData(), input$categoricalCleanVar, "fuzzy" %in% input$categoricalCleanOptions)
+
+    var <- cleanData()[[input$categoricalCleanVar]]
+    unique_values <- unique(var)
+
+    if (length(unique_values) <= 1) {
+      cat("No unique values to perform fuzzy matching on\n")
+      return()
+    }
+
+    # Simple fuzzy matching example (using stringdist)
+    matches <- list()
+    for (i in seq_along(unique_values)) {
+      for (j in seq_along(unique_values)) {
+        if (i != j) {
+          dist <- stringdist(unique_values[i], unique_values[j], method = "jw") # Jaro-Winkler distance
+          if (dist < 0.2) { # Adjust threshold as needed
+            matches[[length(matches) + 1]] <- paste(unique_values[i], "->", unique_values[j])
+          }
+        }
+      }
+    }
+
+    if (length(matches) > 0) {
+      cat("Potential fuzzy matches:\n")
+      print(unlist(matches))
+
+      # Update input choices with potential matches
+      updateSelectInput(session, "fuzzyMatchChoice", choices = unlist(matches), selected = NULL)
+    } else {
+      cat("No potential fuzzy matches found\n")
+    }
+  })
+  
+  # Download Handler
+  output$downloadData <- downloadHandler(
+    filename = function() {
+      paste("cleaned_data-", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      write.csv(cleanData(), file)
+    }
+  )
+  
 }
